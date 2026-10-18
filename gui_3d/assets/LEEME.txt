@@ -1,0 +1,9 @@
+Coloca aqui tu modelo de Miku en formato VRM con el nombre exacto:
+
+    miku.vrm
+
+(gui_3d/renderer.js lo carga desde RUTA_MODELO_VRM = './assets/miku.vrm')
+
+No se incluye ningun modelo VRM en este repositorio: tienes que poner
+el tuyo, obtenido o creado de forma legal (por ejemplo, exportado desde
+VRoid Studio, o un modelo con licencia que te permita usarlo).

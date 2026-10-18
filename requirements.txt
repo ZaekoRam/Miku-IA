@@ -1,0 +1,53 @@
+# --- Modulo 1: STT (oidos) ---
+faster-whisper>=1.0.0
+sounddevice>=0.4.6
+numpy>=1.26.0
+
+# faster-whisper usa CTranslate2, no PyTorch, para correr en GPU (CUDA).
+# Estos paquetes traen las DLLs (cublas, cudnn, cudart, cufft, curand,
+# nvjitlink) que CTranslate2/llama-cpp-python/onnxruntime-gpu necesitan;
+# main.py las agrega al PATH de Windows automaticamente al arrancar,
+# tomandolas de este venv.
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
+nvidia-cuda-runtime-cu12
+nvidia-cufft-cu12
+nvidia-curand-cu12
+
+# --- Modulo Cognitivo (cerebro): LLM local en el proceso -----------------------
+# llama-cpp-python NO instala bien desde PyPI en este equipo (no hay
+# CUDA Toolkit/Visual Studio Build Tools para compilar con CUDA desde
+# codigo fuente). Se usa una wheel precompilada. La RTX 5080 (Blackwell)
+# necesita especificamente la build cu128 -- la del indice oficial
+# (abetlen, hasta cu124) carga los pesos pero truena al primer kernel
+# real con STATUS_ILLEGAL_INSTRUCTION. Instalar con:
+#
+#   pip install https://github.com/sergey21000/llama-cpp-python-wheels/releases/download/v0.3.15-cu128-win/llama_cpp_python-0.3.15-cp312-cp312-win_amd64.whl
+#
+# requests ya cubre la descarga automatica del .gguf si falta (ver
+# core/llm_client.py, config.LLM_GGUF_URL_DESCARGA) y el chat con
+# Ollama para el analisis de memoria en segundo plano (config.MODELO_MEMORIA).
+requests>=2.31.0
+
+# --- Modulo TTS (voz): Kokoro local en GPU --------------------------------------
+# onnxruntime-gpu 1.30 (la ultima) exige CUDA 13 + cuDNN 9 -- este
+# equipo tiene CUDA 12.x, asi que hace falta fijar una version anterior
+# que si sea compatible (1.20.2 esta probada y funciona). kokoro-onnx
+# arrastra "onnxruntime" (CPU) como dependencia transitiva y lo
+# reinstala encima si corres pip install -r sin cuidado -- despues de
+# instalar todo, corre esto para asegurarte de que gane la version GPU:
+#
+#   pip uninstall -y onnxruntime && pip install --force-reinstall --no-deps onnxruntime-gpu==1.20.2
+#
+onnxruntime-gpu==1.20.2
+kokoro-onnx>=0.6.1
+pygame>=2.5.0              # reproduce el audio generado en los parlantes/audifonos
+
+# --- Puente WebSocket (avatar 3D en gui_3d/) ---
+websockets>=12.0          # manda las senales de lip-sync (hablando_inicio/nivel/fin) a Electron
+
+# --- RVC (voz de personaje de Miku) ---
+# NO se instala aqui: rvc-python depende de fairseq==0.12.2, que no
+# instala en Python 3.12 (su metadata es invalida para pip moderno).
+# Vive en un venv aislado con Python 3.10 -- ver requirements-rvc.txt y
+# el comentario en core/tts_speaker.py._convertir_con_rvc().

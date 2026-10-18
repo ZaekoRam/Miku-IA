@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Modelos RVC (varios cientos de MB, no van en git)
+models/rvc/*.pth
+models/rvc/*.index
+
+# Modelos de IA: pesan varios GB y GitHub no acepta archivos de más de 100 MB (ver models/LEEME.md)
+models/llm/*.gguf
+models/kokoro/*.onnx
+models/kokoro/*.bin
+
+# Entorno aislado de RVC (Python 3.10) y caché de audio generado
+rvc_env/
+cache/
+
+# Avatar VRM: va aparte (ver gui_3d/assets/LEEME.txt)
+gui_3d/assets/*.vrm
+
+# Configuración local de Claude Code
+.claude/

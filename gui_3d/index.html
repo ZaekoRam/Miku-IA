@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Miku</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    -webkit-app-region: drag; /* deja arrastrar la ventana sin bordes desde cualquier punto */
+  }
+
+  #lienzo {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Contenedor del avatar: arranca oculto (estilo widget) y solo
+     aparece con la animacion de entrada al detectar "Oye Miku" (ver
+     mostrarAvatar/ocultarAvatar en renderer.js). pointer-events:none
+     mientras esta oculto para no bloquear el arrastre de la ventana con
+     una capa invisible.
+
+     Se probo un efecto tipo "glitch" (blur + drop-shadow RGB split +
+     clip-path) aca, pero con la ventana de Electron siendo transparente
+     esos filtros no se ven limpios contra el escritorio de fondo --
+     revertido a un fundido simple. */
+  #avatar-contenedor {
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transform: translateY(48px) scale(0.92);
+    transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+  }
+
+  #avatar-contenedor.avatar-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+  }
+
+  /* Barra de chat flotante, centrada abajo, estilo "glassmorphism". */
+  #chat-container {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    width: min(88%, 340px);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 8px 8px 16px;
+    border-radius: 999px;
+    background: rgba(24, 24, 32, 0.45);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+    /* Sin esto, el clic/teclado no le llega al input: heredaria el
+       "drag" del body y Electron se lo quedaria para mover la ventana. */
+    -webkit-app-region: no-drag;
+  }
+
+  #chat-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: #ffffff;
+    font: 14px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif;
+    padding: 6px 2px;
+  }
+
+  #chat-input::placeholder {
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  #chat-enviar {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+  }
+
+  #chat-enviar:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  #chat-log-toggle {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+  }
+
+  #chat-log-toggle:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  #chat-log-toggle.chat-log-toggle-activo {
+    background: rgba(140, 170, 255, 0.45);
+  }
+
+  /* Halo tipo Gemini/Siri: un par de anillos que laten hacia afuera
+     mientras Miku esta escuchando el comando por microfono (ver
+     escuchando_inicio/escuchando_fin en renderer.js). */
+  #chat-container.escuchando {
+    border-color: rgba(140, 170, 255, 0.6);
+  }
+
+  #chat-container.escuchando::before,
+  #chat-container.escuchando::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1.5px solid rgba(140, 170, 255, 0.55);
+    animation: halo-latido 1.6s ease-out infinite;
+    pointer-events: none;
+  }
+
+  #chat-container.escuchando::after {
+    animation-delay: 0.5s;
+  }
+
+  @keyframes halo-latido {
+    0% {
+      transform: scale(1);
+      opacity: 0.65;
+    }
+    100% {
+      transform: scale(1.35);
+      opacity: 0;
+    }
+  }
+
+  /* Log de chat (modo hibrido): historial de mensajes con Miku, como un
+     panel angosto pegado al borde derecho -- NO centrado sobre el
+     avatar, para no taparle la cara. Vacio no ocupa lugar (:empty), y
+     aunque tenga contenido queda oculto (opacity+corrido) hasta que
+     mostrarChatLog() lo prenda, con una transicion de deslizamiento
+     sutil en vez de solo aparecer/desaparecer de golpe. */
+  #chat-log {
+    position: fixed;
+    right: 14px;
+    bottom: 76px;
+    top: 14px;
+    width: min(46%, 230px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end; /* si hay pocos mensajes, quedan pegados abajo en vez de arriba */
+    gap: 8px;
+    padding: 14px 10px;
+    border-radius: 18px;
+    background: rgba(18, 18, 26, 0.4);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    transform: translateX(12px);
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    -webkit-app-region: no-drag;
+
+    /* Scrollbar delgada y discreta (Firefox). El estilo de Chromium/Electron va aparte, en ::-webkit-scrollbar. */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  }
+
+  #chat-log:empty {
+    display: none;
+  }
+
+  #chat-log.chat-log-visible {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+
+  #chat-log::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  #chat-log::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  #chat-log::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.22);
+    border-radius: 999px;
+  }
+
+  .chat-mensaje {
+    font: 12.5px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+    color: #ffffff;
+    padding: 7px 11px;
+    border-radius: 13px;
+    max-width: 88%;
+    word-wrap: break-word;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  .chat-mensaje-tu {
+    align-self: flex-end;
+    background: linear-gradient(135deg, rgba(124, 156, 255, 0.55), rgba(124, 156, 255, 0.32));
+    border-bottom-right-radius: 4px;
+  }
+
+  .chat-mensaje-miku {
+    align-self: flex-start;
+    background: rgba(255, 255, 255, 0.12);
+    border-bottom-left-radius: 4px;
+  }
+</style>
+<!--
+  Import map: le dice al navegador donde encontrar "three" y
+  "@pixiv/three-vrm" como modulos ES sin necesidad de un bundler
+  (webpack/vite). Requiere haber corrido "npm install" en gui_3d/ antes.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "./node_modules/three/build/three.module.js",
+    "three/addons/": "./node_modules/three/examples/jsm/",
+    "@pixiv/three-vrm": "./node_modules/@pixiv/three-vrm/lib/three-vrm.module.js"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="avatar-contenedor">
+    <canvas id="lienzo"></canvas>
+  </div>
+
+  <div id="chat-log"></div>
+
+  <div id="chat-container">
+    <button id="chat-log-toggle" type="button" aria-label="Ver historial del chat">&#128172;</button>
+    <input type="text" id="chat-input" placeholder="Escribe un mensaje a Miku..." autocomplete="off" />
+    <button id="chat-enviar" type="button" aria-label="Enviar mensaje">&#10148;</button>
+  </div>
+
+  <script type="module" src="renderer.js"></script>
+</body>
+</html>
